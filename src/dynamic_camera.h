@@ -47,6 +47,44 @@ struct DynamicCamera {
         // lookahead) appropriately. Next,
         // set the camera center by offsetting the cameraUnadjustedCenter, combining lookAhead.
         // Finally update cameraUnadjustedCenter, but without lookahead.
+
+        // +lookAhead while moving right, -lookAhead while moving left, 0 when stopped.
+        float lookAheadWorld = camera.windowPercentToWorldDist({lookAhead, 0.f}).x;
+        float targetLookAhead = 0.f;
+        if (trackedVelocityWorld.x > 0.f) {
+            targetLookAhead = lookAheadWorld;
+        } else if (trackedVelocityWorld.x < 0.f) {
+            targetLookAhead = -lookAheadWorld;
+        }
+        lookaheadState += alpha * (targetLookAhead - lookaheadState);
+
+        //  Reset camera center to the unadjusted center.
+        camera.setCameraCenter(cameraUnadjustedCenter);
+        float playerXPercent = camera.worldToWindowPercent(trackedPosWorld).x;
+        float error = deadZoneX.signedDistance(playerXPercent);
+        if (deadZoneX.contains(playerXPercent)) {
+            // Do nothing.
+        } else if (softZoneX.contains(playerXPercent)) {
+            // Moves slowly towards the soft zone bounds.
+            // Only apply alpha if the error is greater than half of a pixel otherwise applies full error.
+            if (camera.worldToWindowDist(camera.windowPercentToWorldDist({error, 0})).x >= .5f) {
+                error *= alpha;
+                if (playerXPercent < deadZoneX.min) {
+                    error = -error;
+                }
+            }
+            camera.translateWindowPercent({error, 0});
+        } else {
+            // Clamping to the hard zone bounds.
+            error = std::max(error * alpha, softZoneX.signedDistance(playerXPercent));
+            if (playerXPercent < softZoneX.min) {
+                error = -error;
+            }
+            camera.translateWindowPercent({error, 0});
+        }
+        cameraUnadjustedCenter = camera.getCameraCenter();
+        camera.setCameraCenter(cameraUnadjustedCenter + sf::Vector2f{lookaheadState, 0.f});
+
     }
 
     float alpha;  // alpha to use for damping of camera position, *as well as* for smoothing of
